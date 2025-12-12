@@ -2,7 +2,7 @@
 import { useState, useEffect } from 'react';
 import { Card, Typography, Upload, Button, Alert, List, Checkbox, Divider, Space, Tag, Spin } from 'antd';
 import { InboxOutlined, CheckCircleTwoTone, FileWordOutlined, ArrowRightOutlined } from '@ant-design/icons';
-import { useProject, StyleRequirement } from '../../context/ProjectContext';
+import { useProject, type StyleRequirement } from '../../context/ProjectContext';
 import JSZip from 'jszip';
 import { extractStyles, detectPageOrientation } from '../../utils/docxParser';
 

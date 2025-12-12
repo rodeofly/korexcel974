@@ -3,7 +3,7 @@ import { useState } from 'react';
 import { Card, Upload, Typography, List, Tag, Button, Space, message, Avatar } from 'antd';
 import { InboxOutlined, UserOutlined, DeleteOutlined, PlayCircleOutlined, FileWordOutlined, TableOutlined } from '@ant-design/icons';
 import { useProject, type StudentData } from '../../context/ProjectContext';
-import JSZip from 'jszip'; // Nécessaire pour lire les fichiers Word
+import JSZip from 'jszip'; 
 
 // Variable globale XLSX (pour Excel uniquement)
 declare const XLSX: any;
@@ -28,7 +28,6 @@ export function ImportStudentsScreen({ onNavigate }: ImportStudentsScreenProps) 
   const processExcelFile = (file: File, data: ArrayBuffer) => {
     const workbook = XLSX.read(data, { type: 'array' });
     
-    // Extraction Identité (Excel)
     const idSheetName = globalOptions.identitySheet || workbook.SheetNames[0];
     const sheet = workbook.Sheets[idSheetName];
 
@@ -60,13 +59,12 @@ export function ImportStudentsScreen({ onNavigate }: ImportStudentsScreenProps) 
     };
   };
 
-  // --- LOGIQUE WORD ---
+  // --- LOGIQUE WORD (Corrigée pour 8 chiffres) ---
   const processWordFile = async (file: File, data: ArrayBuffer) => {
     try {
       const zip = new JSZip();
       const content = await zip.loadAsync(data);
       
-      // Vérif basique
       if (!content.file("word/document.xml")) {
         return {
           name: file.name, firstName: "", group: "?",
@@ -75,28 +73,38 @@ export function ImportStudentsScreen({ onNavigate }: ImportStudentsScreenProps) 
         };
       }
 
-      // TODO: Pour l'instant, difficile d'extraire le nom DANS le Word sans config complexe.
-      // On utilise le nom du fichier comme solution de repli.
-      // Ex: "Dupont_Jean.docx"
-      let name = file.name.replace('.docx', '');
-      let firstName = "";
+      // 1. On nettoie le nom de fichier (on enlève .docx)
+      const rawName = file.name.replace(/\.docx$/i, '');
       
-      // Tentative de découpage simple si le fichier est "Nom Prénom.docx"
-      const parts = name.split(/[\s_-]+/);
-      if (parts.length >= 2) {
-        name = parts[0].toUpperCase();
-        firstName = parts.slice(1).join(' ');
+      let name = "Inconnu";
+      let firstName = rawName; // Par défaut, tout le nom va dans le prénom
+
+      // 2. REGLE : Chercher 8 chiffres consécutifs
+      const idMatch = rawName.match(/(\d{8})/);
+
+      if (idMatch) {
+        name = idMatch[0]; // "42000894" devient le NOM (Identifiant principal)
+        // On enlève le numéro du reste pour faire le prénom
+        firstName = rawName.replace(idMatch[0], '').trim().replace(/^[_-\s]+|[_-\s]+$/g, '');
+        if (!firstName) firstName = "(Etudiant)";
+      } else {
+        // Si pas de numéro trouvé, on garde le comportement par défaut
+        name = rawName;
+        firstName = "";
       }
 
       return {
-        name, firstName, group: "Aucun", // Difficile à trouver auto dans Word pour l'instant
+        name, 
+        firstName, 
+        group: "Word", 
         workbook: null,
-        wordContent: content, // On stocke le ZIP dézippé
+        wordContent: content, 
         status: 'success' as const,
         errorMessage: undefined
       };
 
     } catch (e) {
+      console.error(e);
       return {
         name: file.name, firstName: "", group: "",
         workbook: null, wordContent: null,
@@ -109,17 +117,17 @@ export function ImportStudentsScreen({ onNavigate }: ImportStudentsScreenProps) 
   const handleFileUpload = async (file: File) => {
     setProcessing(true);
     
-    // Vérification de l'extension avant lecture
+    // Vérification de l'extension
     const isExcel = file.name.endsWith('.xlsx') || file.name.endsWith('.xls');
     const isWord = file.name.endsWith('.docx');
 
     if (projectType === 'excel' && !isExcel) {
-      message.error(`${file.name} : Veuillez envoyer un fichier Excel (.xlsx)`);
+      message.error(`${file.name} : Fichier Excel requis`);
       setProcessing(false);
       return false;
     }
     if (projectType === 'word' && !isWord) {
-      message.error(`${file.name} : Veuillez envoyer un fichier Word (.docx)`);
+      message.error(`${file.name} : Fichier Word requis`);
       setProcessing(false);
       return false;
     }
@@ -157,7 +165,7 @@ export function ImportStudentsScreen({ onNavigate }: ImportStudentsScreenProps) 
     return false; 
   };
 
-  // Configuration de l'affichage selon le mode
+  // Configuration de l'affichage
   const isWordMode = projectType === 'word';
   const acceptExt = isWordMode ? ".docx" : ".xlsx, .xls";
   const dropText = isWordMode ? "Glissez les fichiers WORD (.docx) des élèves" : "Glissez les fichiers EXCEL (.xlsx) des élèves";
@@ -202,7 +210,7 @@ export function ImportStudentsScreen({ onNavigate }: ImportStudentsScreenProps) 
           </p>
           <p className="ant-upload-hint">
             {isWordMode 
-              ? "L'identité sera déduite du nom du fichier (ex: NOM_Prenom.docx)." 
+              ? "Recherche automatique du N° Étudiant (8 chiffres) dans le nom du fichier." 
               : "L'identité sera lue automatiquement dans les cellules configurées."}
           </p>
         </Dragger>
@@ -218,12 +226,12 @@ export function ImportStudentsScreen({ onNavigate }: ImportStudentsScreenProps) 
             <Card size="small" style={{ borderColor: student.status === 'error' ? '#ffccc7' : '#d9d9d9' }}>
               <List.Item.Meta
                 avatar={<Avatar style={{ backgroundColor: isWordMode ? '#1890ff' : '#52c41a' }} icon={<UserOutlined />} />}
-                title={<Text strong>{student.name} {student.firstName}</Text>}
+                title={<Text strong>{student.name}</Text>}
                 description={
                   <Space direction="vertical" size={0}>
-                    <Text type="secondary" style={{ fontSize: 12 }}>{student.filename}</Text>
+                    <Text type="secondary" style={{ fontSize: 12 }}>{student.firstName || student.filename}</Text>
                     <Space>
-                      {student.group !== "Aucun" && <Tag color="blue">Gr: {student.group}</Tag>}
+                      {student.group && <Tag color="blue">{student.group}</Tag>}
                       {student.status === 'error' && <Tag color="error">{student.errorMessage}</Tag>}
                     </Space>
                   </Space>

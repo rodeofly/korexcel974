@@ -1,12 +1,12 @@
 // src/App.tsx
 import { useState } from 'react';
 import { Layout, Typography, Steps } from 'antd';
-import { ProjectProvider, useProject } from './context/ProjectContext'; // Ajout de useProject
+import { ProjectProvider, useProject } from './context/ProjectContext';
 
 // Ecrans
 import { ProjectScreen } from './components/screens/ProjectScreen';
 import { ConfigScreen } from './components/screens/ConfigScreen';
-import { WordConfigScreen } from './components/screens/WordConfigScreen'; // Ajout de l'import
+import { WordConfigScreen } from './components/screens/WordConfigScreen';
 import { ImportStudentsScreen } from './components/screens/ImportStudentsScreen';
 import { ResultsScreen } from './components/screens/ResultsScreen';
 
@@ -17,8 +17,6 @@ type Screen = 'project' | 'config' | 'import' | 'results';
 
 function AppContent() {
   const [currentScreen, setCurrentScreen] = useState<Screen>('project');
-  
-  // On récupère le type de projet pour savoir quel écran afficher
   const { projectType } = useProject(); 
 
   const stepItems = [
@@ -30,6 +28,12 @@ function AppContent() {
 
   const currentStepIndex = stepItems.findIndex(s => s.key === currentScreen);
 
+  // Fonction de navigation directe via les Steps
+  const onStepChange = (current: number) => {
+    const targetScreen = stepItems[current].key as Screen;
+    setCurrentScreen(targetScreen);
+  };
+
   const navigateTo = (screen: Screen) => {
     setCurrentScreen(screen);
   };
@@ -38,14 +42,9 @@ function AppContent() {
     switch (currentScreen) {
       case 'project':
         return <ProjectScreen onNavigate={navigateTo} />;
-      
       case 'config':
-        // C'EST ICI QUE LA MAGIE OPÈRE : LE BRANCHEMENT CONDITIONNEL
-        if (projectType === 'word') {
-          return <WordConfigScreen onNavigate={navigateTo} />;
-        }
+        if (projectType === 'word') return <WordConfigScreen onNavigate={navigateTo} />;
         return <ConfigScreen onNavigate={navigateTo} />;
-      
       case 'import':
         return <ImportStudentsScreen onNavigate={navigateTo} />;
       case 'results':
@@ -67,8 +66,10 @@ function AppContent() {
         <Steps 
           current={currentStepIndex} 
           items={stepItems} 
-          style={{ marginBottom: 32, padding: '0 50px' }}
+          onChange={onStepChange} // <-- C'est ça qui active le clic !
+          style={{ marginBottom: 32, padding: '0 50px', cursor: 'pointer' }}
         />
+
         {renderScreen()}
       </Content>
     </Layout>

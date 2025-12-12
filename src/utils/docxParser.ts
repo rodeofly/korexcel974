@@ -1,6 +1,7 @@
 // src/utils/docxParser.ts
 import JSZip from 'jszip';
-import { StyleRequirement } from '../context/ProjectContext';
+// CORRECTION ICI : Ajout de "type" devant StyleRequirement
+import { type StyleRequirement } from '../context/ProjectContext';
 
 // Namespaces XML utilisés par Word
 const NS = {
@@ -79,8 +80,6 @@ export const extractStyles = async (zip: JSZip): Promise<StyleRequirement[]> => 
       }
     }
     
-    // On filtre les styles "système" inutiles pour ne garder que ceux pertinents (Titres, Normal...)
-    // Ou on renvoie tout et on laisse l'UI filtrer
     return styles.filter(s => 
       s.id.toLowerCase().includes("heading") || 
       s.id.toLowerCase().includes("titre") ||

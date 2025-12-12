@@ -2,6 +2,7 @@
 import { useState } from 'react';
 import { Layout, Typography, Steps } from 'antd';
 import { ProjectProvider } from './context/ProjectContext';
+import { ResultsScreen } from './components/screens/ResultsScreen';
 
 // Ecrans
 import { ProjectScreen } from './components/screens/ProjectScreen';
@@ -39,7 +40,7 @@ function AppContent() {
       case 'import':
         return <ImportStudentsScreen onNavigate={navigateTo} />;
       case 'results':
-        return <div>Écran Résultats (À construire à la prochaine étape !)</div>;
+        return <ResultsScreen />; // C'est ici qu'on branche l'écran !
       default:
         return <ProjectScreen onNavigate={navigateTo} />;
     }

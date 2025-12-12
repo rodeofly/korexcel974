@@ -2,7 +2,7 @@
 import { useState } from 'react';
 import { Card, Upload, Typography, List, Tag, Button, Space, message, Avatar } from 'antd';
 import { InboxOutlined, UserOutlined, DeleteOutlined, PlayCircleOutlined } from '@ant-design/icons';
-import { useProject, StudentData } from '../../context/ProjectContext';
+import { useProject, type StudentData } from '../../context/ProjectContext';
 
 // Variable globale XLSX
 declare const XLSX: any;

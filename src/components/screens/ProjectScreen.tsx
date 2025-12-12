@@ -3,10 +3,14 @@ import { Button, Input, Space, Typography, Card } from 'antd';
 
 const { Title } = Typography;
 
-export function ProjectScreen() {
+interface ProjectScreenProps {
+  onNavigate: (screen: string) => void;
+}
+
+export function ProjectScreen({ onNavigate }: ProjectScreenProps) {
   const handleCreateConfig = () => {
     console.log('Action: Créer une nouvelle configuration');
-    // La logique de navigation viendra ici
+    onNavigate('config'); // Appel de la fonction de navigation
   };
 
   const handleImportConfig = () => {
@@ -16,10 +20,10 @@ export function ProjectScreen() {
 
   return (
     <Card>
-      <Space direction="vertical" size="large" style={{ width: '100%' }}>
+      <Space orientation="vertical" size="large" style={{ width: '100%' }}>
         <Title level={4}>1. Projet</Title>
         
-        <Space direction="vertical" style={{ width: '100%' }}>
+        <Space orientation="vertical" style={{ width: '100%' }}>
           <label htmlFor="project-name">Nom du projet</label>
           <Input 
             id="project-name"

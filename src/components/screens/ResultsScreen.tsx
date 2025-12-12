@@ -1,7 +1,8 @@
 // src/components/screens/ResultsScreen.tsx
 import { useEffect, useState } from 'react';
-import { Card, Table, Typography, Button, Tag, Modal, List, Statistic, Row, Col, Spin, Tabs, InputNumber, Space, Alert, Tooltip, Badge } from 'antd';
-import { DownloadOutlined, ReloadOutlined, EyeOutlined, ArrowRightOutlined, CheckCircleFilled, CloseCircleFilled, InfoCircleOutlined } from '@ant-design/icons';
+// CORRECTION : Ajout de "Divider" dans la liste
+import { Card, Table, Typography, Button, Tag, Modal, List, Statistic, Row, Col, Spin, Tabs, InputNumber, Space, Alert, Tooltip, Divider } from 'antd';
+import { DownloadOutlined, ReloadOutlined, EyeOutlined, ArrowRightOutlined, CheckCircleFilled, CloseCircleFilled } from '@ant-design/icons';
 import { useProject, type StyleRequirement } from '../../context/ProjectContext';
 import { gradeStudent, type StudentResult } from '../../utils/grading';
 
@@ -96,7 +97,7 @@ export function ResultsScreen() {
   };
 
   // Tri hiérarchique des styles (Titre 1 > Titre 2 > Normal)
-  const sortedStylesToCheck = [...wordConfig.stylesToCheck].sort((a, b) => {
+  const sortedStylesToCheck = wordConfig ? [...wordConfig.stylesToCheck].sort((a, b) => {
     const score = (str: string) => {
       const s = str.toLowerCase();
       if (s.includes('titre 1') || s.includes('heading 1')) return 1;
@@ -106,7 +107,7 @@ export function ResultsScreen() {
       return 50;
     };
     return score(a.name) - score(b.name);
-  });
+  }) : [];
 
   // Colonnes améliorées pour Word
   const wordComparisonColumns = (studentStyles: StyleRequirement[]) => [

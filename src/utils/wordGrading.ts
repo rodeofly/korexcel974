@@ -1,6 +1,6 @@
 // src/utils/wordGrading.ts
-import { type StudentData, type WordConfig, type StyleRequirement } from "../context/ProjectContext";
-import { extractStyles, detectPageOrientation } from "./docxParser";
+import { type StudentData, type WordConfig, type StyleRequirement, type SectionRequirement } from "../context/ProjectContext";
+import { extractStyles, extractSections } from "./docxParser";
 
 export interface WordResultDetails {
   score: number;
@@ -11,20 +11,11 @@ export interface WordResultDetails {
 
 const normalize = (str: any) => String(str || "").toLowerCase().trim();
 
-/**
- * Compare deux valeurs de style avec une certaine tolérance
- */
 const compare = (label: string, profVal: any, studentVal: any, errors: string[]) => {
   if (profVal === undefined || profVal === null || profVal === "") return true;
-  
   const p = normalize(profVal);
   const s = normalize(studentVal);
-
-  // Tolérance spéciale pour les couleurs (parfois avec ou sans #)
-  if (label === "Couleur") {
-    if (p.replace('#', '') === s.replace('#', '')) return true;
-  }
-
+  if (label === "Couleur" && p.replace('#', '') === s.replace('#', '')) return true;
   if (p !== s) {
     errors.push(`${label} : Attendu "${profVal}", trouvé "${studentVal || 'Défaut'}"`);
     return false;
@@ -43,69 +34,78 @@ export const gradeWordDocument = async (
   let studentStyles: StyleRequirement[] = [];
 
   if (!student.wordContent) {
-    return { globalScore: 0, details: ["Document vide ou non analysé"], detectedStyles: [] };
+    return { globalScore: 0, details: ["Document vide"], detectedStyles: [] };
   }
 
-  // 1. Analyse des STYLES
+  // 1. Analyse des STYLES (50% de la note)
   if (config.checkStyles) {
     studentStyles = await extractStyles(student.wordContent);
-
     for (const reqStyle of config.stylesToCheck) {
       totalPoints += 5; 
-      
-      // CORRECTION ICI : Recherche insensible à la casse (Heading1 === heading1)
-      const sStyle = studentStyles.find(s => 
-        normalize(s.id) === normalize(reqStyle.id) || 
-        normalize(s.name) === normalize(reqStyle.name)
-      );
+      const sStyle = studentStyles.find(s => normalize(s.id) === normalize(reqStyle.id) || normalize(s.name) === normalize(reqStyle.name));
 
       if (!sStyle) {
-        details.push(`❌ Style "${reqStyle.name}" introuvable chez l'élève.`);
+        details.push(`❌ Style "${reqStyle.name}" introuvable.`);
         continue;
       }
-
       const styleErrors: string[] = [];
-      
       compare("Police", reqStyle.fontName, sStyle.fontName, styleErrors);
-      
       if (reqStyle.fontSize && sStyle.fontSize) {
-         if (Math.abs(reqStyle.fontSize - sStyle.fontSize) > 0.5) {
-            styleErrors.push(`Taille : Attendu ${reqStyle.fontSize}, trouvé ${sStyle.fontSize}`);
-         }
+         if (Math.abs(reqStyle.fontSize - sStyle.fontSize) > 0.5) styleErrors.push(`Taille : Attendu ${reqStyle.fontSize}, trouvé ${sStyle.fontSize}`);
       }
-      
       compare("Couleur", reqStyle.color, sStyle.color, styleErrors);
+      if (reqStyle.isBold !== undefined && reqStyle.isBold !== sStyle.isBold) styleErrors.push(`Gras incorrect`);
+      if (reqStyle.isItalic !== undefined && reqStyle.isItalic !== sStyle.isItalic) styleErrors.push(`Italique incorrect`);
       
-      if (reqStyle.isBold !== undefined && reqStyle.isBold !== sStyle.isBold) {
-        styleErrors.push(`Gras : Attendu ${reqStyle.isBold ? 'Oui' : 'Non'}, trouvé ${sStyle.isBold ? 'Oui' : 'Non'}`);
-      }
-      
-      if (reqStyle.isItalic !== undefined && reqStyle.isItalic !== sStyle.isItalic) {
-        styleErrors.push(`Italique : Attendu ${reqStyle.isItalic ? 'Oui' : 'Non'}, trouvé ${sStyle.isItalic ? 'Oui' : 'Non'}`);
-      }
-
-      if (reqStyle.alignment !== undefined) {
-         compare("Alignement", reqStyle.alignment, sStyle.alignment, styleErrors);
-      }
-
-      if (styleErrors.length === 0) {
-        earnedPoints += 5;
-      } else {
-        details.push(`⚠️ Style "${reqStyle.name}" incorrect : ${styleErrors.join(', ')}`);
-      }
+      if (styleErrors.length === 0) earnedPoints += 5;
+      else details.push(`⚠️ Style "${reqStyle.name}" : ${styleErrors.join(', ')}`);
     }
   }
 
-  // 2. Analyse MISE EN PAGE
-  if (config.checkPageSetup) {
-    totalPoints += 2;
-    const orientation = await detectPageOrientation(student.wordContent);
+  // 2. Analyse des SECTIONS (50% de la note)
+  const studentSections = await extractSections(student.wordContent);
+  
+  for (const reqSect of config.sectionsToCheck) {
+    // On essaie de trouver la section correspondante par index
+    const sSect = studentSections.find(s => s.index === reqSect.index);
+
+    if (!sSect) {
+      if (reqSect.checkOrientation || reqSect.checkHeader || reqSect.checkFooter) {
+         details.push(`❌ Section ${reqSect.index} manquante.`);
+         totalPoints += 2; // Pénalité
+      }
+      continue;
+    }
+
+    if (reqSect.checkOrientation) {
+      totalPoints += 2;
+      if (reqSect.orientation === sSect.orientation) {
+        earnedPoints += 2;
+        details.push(`✅ Section ${reqSect.index} : Orientation ${sSect.orientation} OK.`);
+      } else {
+        details.push(`❌ Section ${reqSect.index} : Orientation incorrecte (Attendu ${reqSect.orientation}, trouvé ${sSect.orientation}).`);
+      }
+    }
+
+    if (reqSect.checkHeader && reqSect.headerText) {
+      totalPoints += 2;
+      // Comparaison souple : est-ce que le texte attendu est contenu dans l'entête ?
+      if (sSect.headerText && normalize(sSect.headerText).includes(normalize(reqSect.headerText))) {
+        earnedPoints += 2;
+        details.push(`✅ Section ${reqSect.index} : Entête correct.`);
+      } else {
+        details.push(`❌ Section ${reqSect.index} : Entête incorrect ou absent.`);
+      }
+    }
     
-    if (orientation === config.expectedOrientation) {
-      earnedPoints += 2;
-      details.push(`✅ Orientation page (${orientation}) respectée.`);
-    } else {
-      details.push(`❌ Orientation incorrecte : Attendu ${config.expectedOrientation}, trouvé ${orientation}.`);
+    if (reqSect.checkFooter && reqSect.footerText) {
+      totalPoints += 2;
+      if (sSect.footerText && normalize(sSect.footerText).includes(normalize(reqSect.footerText))) {
+        earnedPoints += 2;
+        details.push(`✅ Section ${reqSect.index} : Pied de page correct.`);
+      } else {
+        details.push(`❌ Section ${reqSect.index} : Pied de page incorrect.`);
+      }
     }
   }
 

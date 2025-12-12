@@ -11,10 +11,10 @@ export interface SheetConfig {
   selectedCells: string[];
 }
 
-// === TYPES WORD (NOUVEAU) ===
+// === TYPES WORD (EVOLUÉ) ===
 export interface StyleRequirement {
-  id: string; // ex: "Heading1"
-  name: string; // ex: "Titre 1"
+  id: string; 
+  name: string; 
   fontName?: string;
   fontSize?: number;
   color?: string;
@@ -23,11 +23,21 @@ export interface StyleRequirement {
   alignment?: string;
 }
 
+export interface SectionRequirement {
+  index: number; // Section 1, 2...
+  orientation: 'portrait' | 'landscape';
+  headerText?: string; // Texte contenu dans l'entête
+  footerText?: string; // Texte contenu dans le pied de page
+  checkOrientation: boolean;
+  checkHeader: boolean;
+  checkFooter: boolean;
+}
+
 export interface WordConfig {
   checkStyles: boolean;
-  stylesToCheck: StyleRequirement[]; // Liste des styles à vérifier
-  checkPageSetup: boolean;
-  expectedOrientation: 'portrait' | 'landscape' | 'mixed'; // Ce qu'on attend
+  stylesToCheck: StyleRequirement[];
+  // NOUVEAU : Liste des sections à vérifier
+  sectionsToCheck: SectionRequirement[]; 
 }
 
 export type ProjectType = 'excel' | 'word';
@@ -55,12 +65,10 @@ interface ProjectState {
   profWordData: any | null; 
   setProfData: (file: File | null, data: any) => void;
 
-  // Config Excel
   sheetConfigs: SheetConfig[];
   setSheetConfigs: (configs: SheetConfig[]) => void;
   updateSheetConfig: (name: string, key: keyof SheetConfig, value: any) => void;
 
-  // Config Word (NOUVEAU)
   wordConfig: WordConfig;
   setWordConfig: (config: WordConfig) => void;
 
@@ -88,7 +96,7 @@ interface ProjectState {
 }
 
 const ProjectContext = createContext<ProjectState | undefined>(undefined);
-const STORAGE_KEY = 'korexcel_project_config_v3'; // Version 3
+const STORAGE_KEY = 'korexcel_project_config_v4'; // Version 4
 
 export function ProjectProvider({ children }: { children: ReactNode }) {
   const [projectName, setProjectName] = useState(() => {
@@ -110,19 +118,18 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
     return saved ? JSON.parse(saved).sheetConfigs : [];
   });
 
-  // État par défaut pour Word
   const [wordConfig, setWordConfig] = useState<WordConfig>(() => {
     const saved = localStorage.getItem(STORAGE_KEY);
-    return saved ? (JSON.parse(saved).wordConfig || {
+    // Migration v3 -> v4 : on ajoute sectionsToCheck par défaut
+    const loaded = saved ? JSON.parse(saved).wordConfig : null;
+    return loaded ? {
+      checkStyles: loaded.checkStyles ?? true,
+      stylesToCheck: loaded.stylesToCheck || [],
+      sectionsToCheck: loaded.sectionsToCheck || [] 
+    } : {
       checkStyles: true,
       stylesToCheck: [],
-      checkPageSetup: true,
-      expectedOrientation: 'portrait'
-    }) : {
-      checkStyles: true,
-      stylesToCheck: [],
-      checkPageSetup: true,
-      expectedOrientation: 'portrait'
+      sectionsToCheck: []
     };
   });
   
@@ -155,7 +162,7 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
       projectName,
       projectType,
       sheetConfigs,
-      wordConfig, // On sauvegarde aussi la config Word
+      wordConfig,
       globalOptions
     };
     localStorage.setItem(STORAGE_KEY, JSON.stringify(dataToSave));
@@ -199,7 +206,7 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
       projectType, setProjectType,
       profFile, profWorkbook, profWordData, setProfData,
       sheetConfigs, setSheetConfigs, updateSheetConfig,
-      wordConfig, setWordConfig, // Export des fonctions Word
+      wordConfig, setWordConfig, 
       globalOptions, setGlobalOption,
       students, addStudent, clearStudents
     }}>

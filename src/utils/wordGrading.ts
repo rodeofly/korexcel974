@@ -6,9 +6,10 @@ export interface WordResultDetails {
   score: number;
   maxScore: number;
   details: string[];
-  // NOUVEAU : On renvoie les styles trouvés pour l'affichage
   detectedStyles: StyleRequirement[];
 }
+
+const normalize = (str: any) => String(str || "").toLowerCase().trim();
 
 /**
  * Compare deux valeurs de style avec une certaine tolérance
@@ -16,11 +17,16 @@ export interface WordResultDetails {
 const compare = (label: string, profVal: any, studentVal: any, errors: string[]) => {
   if (profVal === undefined || profVal === null || profVal === "") return true;
   
-  const p = String(profVal).toLowerCase().trim();
-  const s = String(studentVal || "").toLowerCase().trim();
+  const p = normalize(profVal);
+  const s = normalize(studentVal);
+
+  // Tolérance spéciale pour les couleurs (parfois avec ou sans #)
+  if (label === "Couleur") {
+    if (p.replace('#', '') === s.replace('#', '')) return true;
+  }
 
   if (p !== s) {
-    errors.push(`${label} : Attendu "${profVal}", trouvé "${studentVal || 'Aucun'}"`);
+    errors.push(`${label} : Attendu "${profVal}", trouvé "${studentVal || 'Défaut'}"`);
     return false;
   }
   return true;
@@ -42,13 +48,16 @@ export const gradeWordDocument = async (
 
   // 1. Analyse des STYLES
   if (config.checkStyles) {
-    // On extrait TOUS les styles de l'élève
     studentStyles = await extractStyles(student.wordContent);
 
     for (const reqStyle of config.stylesToCheck) {
       totalPoints += 5; 
       
-      const sStyle = studentStyles.find(s => s.id === reqStyle.id || s.name === reqStyle.name);
+      // CORRECTION ICI : Recherche insensible à la casse (Heading1 === heading1)
+      const sStyle = studentStyles.find(s => 
+        normalize(s.id) === normalize(reqStyle.id) || 
+        normalize(s.name) === normalize(reqStyle.name)
+      );
 
       if (!sStyle) {
         details.push(`❌ Style "${reqStyle.name}" introuvable chez l'élève.`);
@@ -58,12 +67,13 @@ export const gradeWordDocument = async (
       const styleErrors: string[] = [];
       
       compare("Police", reqStyle.fontName, sStyle.fontName, styleErrors);
-      // Tolérance de 0.5pt pour la taille
+      
       if (reqStyle.fontSize && sStyle.fontSize) {
          if (Math.abs(reqStyle.fontSize - sStyle.fontSize) > 0.5) {
             styleErrors.push(`Taille : Attendu ${reqStyle.fontSize}, trouvé ${sStyle.fontSize}`);
          }
       }
+      
       compare("Couleur", reqStyle.color, sStyle.color, styleErrors);
       
       if (reqStyle.isBold !== undefined && reqStyle.isBold !== sStyle.isBold) {
@@ -86,7 +96,7 @@ export const gradeWordDocument = async (
     }
   }
 
-  // 2. Analyse de la MISE EN PAGE
+  // 2. Analyse MISE EN PAGE
   if (config.checkPageSetup) {
     totalPoints += 2;
     const orientation = await detectPageOrientation(student.wordContent);
@@ -104,6 +114,6 @@ export const gradeWordDocument = async (
   return {
     globalScore: Number(finalScore.toFixed(2)),
     details,
-    detectedStyles: studentStyles // On renvoie la liste brute pour l'inspecteur
+    detectedStyles: studentStyles
   };
 };

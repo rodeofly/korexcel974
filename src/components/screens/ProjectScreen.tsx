@@ -1,46 +1,69 @@
 // src/components/screens/ProjectScreen.tsx
-import { Button, Input, Space, Typography, Card } from 'antd';
+import { Button, Input, Space, Typography, Card, Radio } from 'antd';
+import { useProject } from '../../context/ProjectContext';
+import { TableOutlined, FileWordOutlined } from '@ant-design/icons';
 
-const { Title } = Typography;
+const { Title, Text } = Typography;
 
 interface ProjectScreenProps {
-  onNavigate: (screen: string) => void;
+  onNavigate: (screen: 'config') => void; // Typage plus strict
 }
 
 export function ProjectScreen({ onNavigate }: ProjectScreenProps) {
-  const handleCreateConfig = () => {
-    console.log('Action: Créer une nouvelle configuration');
-    onNavigate('config'); // Appel de la fonction de navigation
-  };
+  // On utilise le contexte pour lire/écrire
+  const { projectName, setProjectName, projectType, setProjectType } = useProject();
 
-  const handleImportConfig = () => {
-    console.log('Action: Importer une configuration');
-    // La logique d'import viendra ici
+  const handleCreateConfig = () => {
+    if (!projectName.trim()) return;
+    onNavigate('config');
   };
 
   return (
     <Card>
-      <Space orientation="vertical" size="large" style={{ width: '100%' }}>
-        <Title level={4}>1. Projet</Title>
+      <Space direction="vertical" size="large" style={{ width: '100%' }}>
+        <Title level={4}>1. Nouveau Projet</Title>
         
-        <Space orientation="vertical" style={{ width: '100%' }}>
-          <label htmlFor="project-name">Nom du projet</label>
+        <Space direction="vertical" style={{ width: '100%' }}>
+          <Text strong>Nom du projet</Text>
           <Input 
-            id="project-name"
-            placeholder="Ex: TP Excel S1 - Finance" 
+            placeholder="Ex: Partiel Info - Semestre 1" 
             size="large" 
+            value={projectName}
+            onChange={(e) => setProjectName(e.target.value)}
           />
         </Space>
 
-        <Space>
-          <Button type="primary" size="large" onClick={handleCreateConfig}>
-            Créer une configuration
-          </Button>
-          <Button size="large" onClick={handleImportConfig}>
-            Importer une configuration (JSON)
-          </Button>
+        <Space direction="vertical" style={{ width: '100%' }}>
+          <Text strong>Type de correction</Text>
+          <Radio.Group 
+            value={projectType} 
+            onChange={(e) => setProjectType(e.target.value)}
+            size="large"
+          >
+            <Radio.Button value="excel" style={{ height: 50, lineHeight: '50px', padding: '0 20px' }}>
+              <Space><TableOutlined style={{ color: '#52c41a' }} /> Tableur (Excel)</Space>
+            </Radio.Button>
+            <Radio.Button value="word" style={{ height: 50, lineHeight: '50px', padding: '0 20px' }}>
+              <Space><FileWordOutlined style={{ color: '#1890ff' }} /> Traitement de texte (Word)</Space>
+            </Radio.Button>
+          </Radio.Group>
         </Space>
+
+        <Divider />
+
+        <Button 
+          type="primary" 
+          size="large" 
+          onClick={handleCreateConfig}
+          disabled={!projectName.trim()}
+          style={{ width: '200px' }}
+        >
+          Commencer la configuration
+        </Button>
       </Space>
     </Card>
   );
 }
+
+// J'ajoute un import manquant pour Divider
+import { Divider } from 'antd';

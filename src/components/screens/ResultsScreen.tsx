@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react';
 import { Card, Table, Typography, Button, Tag, Modal, List, Statistic, Row, Col } from 'antd';
 import { DownloadOutlined, ReloadOutlined, EyeOutlined } from '@ant-design/icons';
 import { useProject } from '../../context/ProjectContext';
-import { gradeStudent, StudentResult } from '../../utils/grading';
+import { gradeStudent, type StudentResult } from '../../utils/grading';
 
 declare const XLSX: any; // Utilisation de SheetJS pour l'export
 

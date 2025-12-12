@@ -1,46 +1,50 @@
 // src/context/ProjectContext.tsx
-import React, { createContext, useContext, useState, ReactNode } from 'react';
+import React, { createContext, useContext, useState, ReactNode, useEffect } from 'react';
 
-// === DÉFINITION DES TYPES ===
+// === TYPES ===
 
-// 1. Config d'une feuille
+export type ProjectType = 'excel' | 'word'; // <--- NOUVEAU TYPE
+
 export interface SheetConfig {
   name: string;
   enabled: boolean;
   weight: number;
   checkFormulas?: boolean;
   ignoreDollar?: boolean;
+  selectedCells: string[];
 }
 
-// 2. Données d'un étudiant (C'est l'export qui vous manque !)
 export interface StudentData {
-  id: string;         // Un identifiant unique
-  filename: string;   // Nom du fichier
-  name: string;       // Nom extrait
-  firstName: string;  // Prénom extrait
-  group: string;      // Groupe extrait
-  workbook: any;      // Le contenu Excel brut
+  id: string;
+  filename: string;
+  name: string;
+  firstName: string;
+  group: string;
+  workbook: any;      // Pour Excel
+  wordContent?: any;  // Pour Word (contenu dézippé) <--- NOUVEAU CHAMP
   status: 'success' | 'error';
   errorMessage?: string;
 }
 
-// 3. État global du projet
 interface ProjectState {
-  // Infos Projet
   projectName: string;
   setProjectName: (name: string) => void;
   
-  // Fichier Professeur
+  // NOUVEAU : Type de projet
+  projectType: ProjectType;
+  setProjectType: (type: ProjectType) => void;
+
   profFile: File | null;
   profWorkbook: any | null;
-  setProfData: (file: File | null, workbook: any | null) => void;
+  // NOUVEAU : Données prof Word
+  profWordData: any | null; 
+  
+  setProfData: (file: File | null, data: any) => void;
 
-  // Config des feuilles
   sheetConfigs: SheetConfig[];
   setSheetConfigs: (configs: SheetConfig[]) => void;
   updateSheetConfig: (name: string, key: keyof SheetConfig, value: any) => void;
 
-  // Options Globales
   globalOptions: {
     identitySheet?: string;
     studentIdCell: string; 
@@ -54,27 +58,43 @@ interface ProjectState {
     globalRelTolerance: number;
     checkFormulas: boolean;
     ignoreDollar: boolean;
+    scanMaxRows: number;
+    scanMaxCols: number;
   };
   setGlobalOption: (key: string, value: any) => void;
 
-  // LISTE DES ÉLÈVES
   students: StudentData[];
   addStudent: (student: StudentData) => void;
   clearStudents: () => void;
 }
 
 const ProjectContext = createContext<ProjectState | undefined>(undefined);
-
-// === LE PROVIDER ===
+const STORAGE_KEY = 'korexcel_project_config_v2'; // Changement de version v2
 
 export function ProjectProvider({ children }: { children: ReactNode }) {
-  const [projectName, setProjectName] = useState('');
+  
+  // Chargement initial
+  const [projectName, setProjectName] = useState(() => {
+    const saved = localStorage.getItem(STORAGE_KEY);
+    return saved ? JSON.parse(saved).projectName : '';
+  });
+
+  // NOUVEAU STATE
+  const [projectType, setProjectType] = useState<ProjectType>(() => {
+    const saved = localStorage.getItem(STORAGE_KEY);
+    return saved ? (JSON.parse(saved).projectType || 'excel') : 'excel';
+  });
+
   const [profFile, setProfFile] = useState<File | null>(null);
   const [profWorkbook, setProfWorkbook] = useState<any | null>(null);
-  const [sheetConfigs, setSheetConfigs] = useState<SheetConfig[]>([]);
-  const [students, setStudents] = useState<StudentData[]>([]); // Stockage élèves
+  const [profWordData, setProfWordData] = useState<any | null>(null); // Pour Word
+
+  const [sheetConfigs, setSheetConfigs] = useState<SheetConfig[]>(() => {
+    const saved = localStorage.getItem(STORAGE_KEY);
+    return saved ? JSON.parse(saved).sheetConfigs : [];
+  });
   
-  const [globalOptions, setGlobalOptions] = useState({
+  const defaultGlobalOptions = {
     identitySheet: undefined as string | undefined,
     studentIdCell: 'B1',        
     studentNameCell: 'B2',      
@@ -87,11 +107,38 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
     globalRelTolerance: 0.0001,
     checkFormulas: true,
     ignoreDollar: true,
+    scanMaxRows: 50,
+    scanMaxCols: 26,
+  };
+
+  const [globalOptions, setGlobalOptions] = useState(() => {
+    const saved = localStorage.getItem(STORAGE_KEY);
+    return saved ? { ...defaultGlobalOptions, ...JSON.parse(saved).globalOptions } : defaultGlobalOptions;
   });
 
-  const setProfData = (file: File | null, workbook: any | null) => {
+  const [students, setStudents] = useState<StudentData[]>([]);
+
+  // Sauvegarde auto
+  useEffect(() => {
+    const dataToSave = {
+      projectName,
+      projectType, // On sauvegarde aussi le type
+      sheetConfigs,
+      globalOptions
+    };
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(dataToSave));
+  }, [projectName, projectType, sheetConfigs, globalOptions]);
+
+
+  const setProfData = (file: File | null, data: any) => {
     setProfFile(file);
-    setProfWorkbook(workbook);
+    if (projectType === 'excel') {
+      setProfWorkbook(data);
+      setProfWordData(null);
+    } else {
+      setProfWordData(data); // On stockera le zip ou le XML ici
+      setProfWorkbook(null);
+    }
   };
 
   const updateSheetConfig = (name: string, key: keyof SheetConfig, value: any) => {
@@ -117,7 +164,8 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
   return (
     <ProjectContext.Provider value={{
       projectName, setProjectName,
-      profFile, profWorkbook, setProfData,
+      projectType, setProjectType,
+      profFile, profWorkbook, profWordData, setProfData,
       sheetConfigs, setSheetConfigs, updateSheetConfig,
       globalOptions, setGlobalOption,
       students, addStudent, clearStudents

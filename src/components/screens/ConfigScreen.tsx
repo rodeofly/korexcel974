@@ -1,10 +1,10 @@
 // src/components/screens/ConfigScreen.tsx
-import { useEffect } from 'react';
-import { Card, Typography, Upload, Select, Input, Space, Checkbox, List, Switch, InputNumber, Button, Divider } from 'antd';
-import { InboxOutlined, CheckCircleTwoTone, ArrowRightOutlined } from '@ant-design/icons';
+import { useEffect, useState } from 'react';
+import { Card, Typography, Upload, Select, Input, Space, Checkbox, List, Switch, InputNumber, Button, Divider, Alert } from 'antd';
+import { InboxOutlined, CheckCircleTwoTone, ArrowRightOutlined, SettingOutlined, ExclamationCircleOutlined } from '@ant-design/icons';
 import { useProject } from '../../context/ProjectContext';
+import { SheetConfigPanel } from '../SheetConfigPanel';
 
-// Indique à TypeScript que la variable XLSX existe globalement (chargée via index.html)
 declare const XLSX: any;
 
 const { Title, Text, Paragraph } = Typography;
@@ -15,32 +15,32 @@ interface ConfigScreenProps {
 }
 
 export function ConfigScreen({ onNavigate }: ConfigScreenProps) {
-  // On récupère toutes les données et fonctions depuis notre "mémoire" globale
   const { 
     profFile, profWorkbook, setProfData,
     sheetConfigs, setSheetConfigs, updateSheetConfig,
     globalOptions, setGlobalOption
   } = useProject();
 
-  // Initialisation automatique des feuilles si nouveau fichier
+  const [editingSheet, setEditingSheet] = useState<string | null>(null);
+
+  // Initialisation automatique des feuilles UNIQUEMENT si aucune config n'existe
   useEffect(() => {
     if (profWorkbook && sheetConfigs.length === 0) {
       const names = profWorkbook.SheetNames;
       if (names.length > 0) {
-        // Par défaut, la 1ère feuille est celle d'identité
         if (!globalOptions.identitySheet) {
           setGlobalOption('identitySheet', names[0]);
         }
-        // On crée une config par défaut pour chaque feuille
         const initialConfigs = names.map((name: string) => ({ 
           name, 
           enabled: true, 
-          weight: 1 
+          weight: 1,
+          selectedCells: []
         }));
         setSheetConfigs(initialConfigs);
       }
     }
-  }, [profWorkbook]);
+  }, [profWorkbook]); // On surveille le workbook
 
   const handleFileUpload = (file: File) => {
     const reader = new FileReader();
@@ -48,45 +48,61 @@ export function ConfigScreen({ onNavigate }: ConfigScreenProps) {
       try {
         const data = e.target?.result;
         const workbook = XLSX.read(data, { type: 'array' });
-        // On sauvegarde dans le contexte global
         setProfData(file, workbook);
       } catch (error) {
-        console.error("Erreur lors de la lecture du fichier Excel:", error);
+        console.error("Erreur Excel:", error);
       }
     };
     reader.readAsArrayBuffer(file);
-    return false; // Empêche l'upload automatique par AntD
+    return false; 
   };
 
   const handleRemoveFile = () => {
     setProfData(null, null);
-    setSheetConfigs([]);
-    setGlobalOption('identitySheet', undefined);
+    // Note : On ne vide PAS la config ici pour permettre le re-upload
     return true;
   }
 
-  const sheetNames = profWorkbook ? profWorkbook.SheetNames : [];
+  // Si le workbook est chargé, on prend ses feuilles. 
+  // Sinon, on affiche celles de la config sauvegardée (si elle existe)
+  const displaySheetNames = profWorkbook 
+    ? profWorkbook.SheetNames 
+    : sheetConfigs.map(c => c.name);
+
+  const isConfigRestored = !profWorkbook && sheetConfigs.length > 0;
 
   return (
     <Card 
-      title={<Title level={4}>Étape 2 : Charger le corrigé et Configurer</Title>}
+      title={<Title level={4}>Étape 2 : Configuration du Corrigé</Title>}
       actions={[
         <div style={{ padding: '0 24px', textAlign: 'right' }}>
            <Button 
             type="primary" 
             size="large" 
             icon={<ArrowRightOutlined />}
-            disabled={!profWorkbook}
+            disabled={!profWorkbook} // On oblige à avoir le fichier chargé pour continuer
             onClick={() => onNavigate('import')}
           >
-            Valider et Passer à l'import des élèves
+            {isConfigRestored ? "Fichier rechargé : Continuer" : "Valider et Passer à l'import"}
           </Button>
         </div>
       ]}
     >
       
       <div style={{ marginBottom: 24 }}>
-        <Title level={5}>2.1 Charger le fichier Professeur (corrigé)</Title>
+        <Title level={5}>2.1 Charger le fichier Professeur</Title>
+        
+        {isConfigRestored && (
+          <Alert
+            message="Configuration restaurée"
+            description="Votre configuration précédente a été sauvegardée. Veuillez recharger le fichier Excel Professeur pour réactiver la correction."
+            type="warning"
+            showIcon
+            icon={<ExclamationCircleOutlined />}
+            style={{ marginBottom: 16 }}
+          />
+        )}
+
         <Dragger 
           name="file"
           multiple={false}
@@ -97,16 +113,19 @@ export function ConfigScreen({ onNavigate }: ConfigScreenProps) {
           fileList={profFile ? [profFile as any] : []}
         >
           <p className="ant-upload-drag-icon"><InboxOutlined /></p>
-          <p className="ant-upload-text">Cliquez ou glissez-déposez le fichier du corrigé ici</p>
+          <p className="ant-upload-text">
+            {profFile ? "Fichier chargé" : "Cliquez ou glissez le fichier du corrigé ici"}
+          </p>
         </Dragger>
+        
         {profFile && (
           <Paragraph style={{ marginTop: 8, color: 'green' }}>
-            <CheckCircleTwoTone twoToneColor="#52c41a" /> "{profFile.name}" chargé avec succès.
+            <CheckCircleTwoTone twoToneColor="#52c41a" /> "{profFile.name}" est prêt.
           </Paragraph>
         )}
       </div>
 
-      {sheetNames.length > 0 && (
+      {displaySheetNames.length > 0 && (
         <>
           <Divider />
           <Title level={5}>2.2 Paramètres "Identité Étudiant"</Title>
@@ -117,33 +136,28 @@ export function ConfigScreen({ onNavigate }: ConfigScreenProps) {
                 value={globalOptions.identitySheet}
                 onChange={(val) => setGlobalOption('identitySheet', val)}
                 style={{ width: '100%' }}
-                options={sheetNames.map((name: string) => ({ label: name, value: name }))}
+                // Si le fichier n'est pas chargé, on utilise les noms de la config sauvegardée
+                options={displaySheetNames.map((name: string) => ({ label: name, value: name }))}
               />
             </div>
-            <Space>
+            <Space wrap>
               <div>
                 <Text>Cellule "Numéro étudiant"</Text>
-                <Input value={globalOptions.studentIdCell} onChange={(e) => setGlobalOption('studentIdCell', e.target.value)} />
+                <Input value={globalOptions.studentIdCell} onChange={(e) => setGlobalOption('studentIdCell', e.target.value)} style={{ width: 100 }} />
+              </div>
+              <div>
+                <Text>Cellule "Nom"</Text>
+                <Input value={globalOptions.studentNameCell} onChange={(e) => setGlobalOption('studentNameCell', e.target.value)} style={{ width: 100 }} />
+              </div>
+              <div>
+                <Text>Cellule "Prénom"</Text>
+                <Input value={globalOptions.studentFirstNameCell} onChange={(e) => setGlobalOption('studentFirstNameCell', e.target.value)} style={{ width: 100 }} />
               </div>
               <div>
                 <Text>Cellule "Groupe"</Text>
-                <Input value={globalOptions.groupIdCell} onChange={(e) => setGlobalOption('groupIdCell', e.target.value)} />
+                <Input value={globalOptions.groupIdCell} onChange={(e) => setGlobalOption('groupIdCell', e.target.value)} style={{ width: 100 }} />
               </div>
             </Space>
-            <div style={{ paddingTop: 8 }}>
-              <Text>Options de nettoyage :</Text>
-              <div style={{ display: 'flex', flexDirection: 'column', paddingTop: 4 }}>
-                  <Checkbox checked={globalOptions.trimIdentity} onChange={(e) => setGlobalOption('trimIdentity', e.target.checked)}>
-                    Supprimer les espaces avant/après (trim)
-                  </Checkbox>
-                  <Checkbox checked={globalOptions.extractIdNumber} onChange={(e) => setGlobalOption('extractIdNumber', e.target.checked)}>
-                    Extraire uniquement les chiffres de l'ID étudiant
-                  </Checkbox>
-                  <Checkbox checked={globalOptions.extractGroupNumber} onChange={(e) => setGlobalOption('extractGroupNumber', e.target.checked)}>
-                    Extraire le numéro du groupe (ex: "Groupe 2" -&gt; 2)
-                  </Checkbox>
-              </div>
-            </div>
           </Space>
 
           <Divider />
@@ -154,14 +168,26 @@ export function ConfigScreen({ onNavigate }: ConfigScreenProps) {
             dataSource={sheetConfigs}
             renderItem={item => (
               <List.Item
-                actions={[<Button type="link">Configurer (bientôt)</Button>]}
+                actions={[
+                  <Button 
+                    type={item.selectedCells && item.selectedCells.length > 0 ? "primary" : "default"}
+                    ghost={item.selectedCells && item.selectedCells.length > 0}
+                    icon={<SettingOutlined />}
+                    disabled={!profWorkbook} // Impossible de configurer visuellement sans le fichier
+                    onClick={() => setEditingSheet(item.name)}
+                  >
+                    {item.selectedCells && item.selectedCells.length > 0 
+                      ? `${item.selectedCells.length} cellules` 
+                      : "Tout corriger"}
+                  </Button>
+                ]}
               >
                 <Space align="center">
                   <Switch 
                     checked={item.enabled} 
                     onChange={(checked) => updateSheetConfig(item.name, 'enabled', checked)}
                   />
-                  <Text style={{ minWidth: 200 }}>{item.name}</Text>
+                  <Text style={{ minWidth: 150 }}>{item.name}</Text>
                   <Text>Poids :</Text>
                   <InputNumber 
                     min={0} 
@@ -175,45 +201,47 @@ export function ConfigScreen({ onNavigate }: ConfigScreenProps) {
           />
 
           <Divider />
-          <Title level={5}>2.4 Options Globales de Notation</Title>
+          <Title level={5}>2.4 Options Globales & Affichage</Title>
           <Space direction="vertical" style={{ width: '100%' }}>
-            <div>
-              <Text strong>Mode de calcul :</Text>
-              <Paragraph>Mode fiable (recalcul complet)</Paragraph>
-            </div>
             
             <div>
-              <Text strong>Tolérance numérique globale :</Text>
+              <Text strong>Zone de scan par défaut :</Text>
               <Space>
-                <Text>Absolue:</Text>
+                <Text>Max Lignes :</Text>
                 <InputNumber 
-                  value={globalOptions.globalAbsTolerance} 
-                  onChange={v => setGlobalOption('globalAbsTolerance', v)} 
-                  step="0.001" 
+                  min={10} max={1000} 
+                  value={globalOptions.scanMaxRows} 
+                  onChange={v => setGlobalOption('scanMaxRows', v)} 
                 />
-                <Text>Relative:</Text>
+                <Text>Max Colonnes :</Text>
                 <InputNumber 
-                  value={globalOptions.globalRelTolerance} 
-                  onChange={v => setGlobalOption('globalRelTolerance', v)} 
-                  step="0.0001" 
+                  min={5} max={100} 
+                  value={globalOptions.scanMaxCols} 
+                  onChange={v => setGlobalOption('scanMaxCols', v)} 
                 />
               </Space>
             </div>
 
+            <div style={{ marginTop: 16 }}>
+              <Text strong>Tolérance numérique globale :</Text>
+              <Space>
+                <Text>Absolue:</Text>
+                <InputNumber value={globalOptions.globalAbsTolerance} onChange={v => setGlobalOption('globalAbsTolerance', v)} step="0.001" />
+                <Text>Relative:</Text>
+                <InputNumber value={globalOptions.globalRelTolerance} onChange={v => setGlobalOption('globalRelTolerance', v)} step="0.0001" />
+              </Space>
+            </div>
             <div>
-              <Text strong>Vérification des formules :</Text>
+              <Text strong>Formules :</Text>
               <div>
-                <Switch 
-                  checked={globalOptions.checkFormulas} 
-                  onChange={(c) => setGlobalOption('checkFormulas', c)} 
-                />
+                <Switch checked={globalOptions.checkFormulas} onChange={(c) => setGlobalOption('checkFormulas', c)} />
                 {globalOptions.checkFormulas && (
                   <Checkbox 
                     style={{ marginLeft: 16 }} 
                     checked={globalOptions.ignoreDollar} 
                     onChange={e => setGlobalOption('ignoreDollar', e.target.checked)}
                   >
-                    Accepter les formules sans '$' (références relatives)
+                    Ignorer les '$'
                   </Checkbox>
                 )}
               </div>
@@ -221,6 +249,12 @@ export function ConfigScreen({ onNavigate }: ConfigScreenProps) {
           </Space>
         </>
       )}
+
+      <SheetConfigPanel 
+        visible={!!editingSheet} 
+        sheetName={editingSheet || ""} 
+        onClose={() => setEditingSheet(null)} 
+      />
     </Card>
   );
 }

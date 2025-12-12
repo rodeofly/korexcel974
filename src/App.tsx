@@ -1,17 +1,30 @@
 // src/App.tsx
 import { useState } from 'react';
-import { Layout, Typography } from 'antd';
+import { Layout, Typography, Steps } from 'antd';
+import { ProjectProvider } from './context/ProjectContext';
+
+// Ecrans
 import { ProjectScreen } from './components/screens/ProjectScreen';
 import { ConfigScreen } from './components/screens/ConfigScreen';
+import { ImportStudentsScreen } from './components/screens/ImportStudentsScreen';
 
 const { Header, Content } = Layout;
 const { Title } = Typography;
 
-// Définir les types pour les écrans afin d'éviter les chaînes de caractères magiques
 type Screen = 'project' | 'config' | 'import' | 'results';
 
-function App() {
+function AppContent() {
   const [currentScreen, setCurrentScreen] = useState<Screen>('project');
+
+  // Petit mapping pour la barre de progression (Steps)
+  const stepItems = [
+    { title: 'Projet', key: 'project' },
+    { title: 'Config Prof', key: 'config' },
+    { title: 'Import Élèves', key: 'import' },
+    { title: 'Résultats', key: 'results' },
+  ];
+
+  const currentStepIndex = stepItems.findIndex(s => s.key === currentScreen);
 
   const navigateTo = (screen: Screen) => {
     setCurrentScreen(screen);
@@ -22,8 +35,11 @@ function App() {
       case 'project':
         return <ProjectScreen onNavigate={navigateTo} />;
       case 'config':
-        return <ConfigScreen />;
-      // Les autres écrans viendront ici
+        return <ConfigScreen onNavigate={navigateTo} />;
+      case 'import':
+        return <ImportStudentsScreen onNavigate={navigateTo} />;
+      case 'results':
+        return <div>Écran Résultats (À construire à la prochaine étape !)</div>;
       default:
         return <ProjectScreen onNavigate={navigateTo} />;
     }
@@ -33,14 +49,29 @@ function App() {
     <Layout style={{ minHeight: '100vh' }}>
       <Header style={{ display: 'flex', alignItems: 'center' }}>
         <Title style={{ color: 'white', margin: 0 }} level={3}>
-          KoreKcel - Correcteur de fichiers Excel
+          KoreKcel 974
         </Title>
       </Header>
-      <Content style={{ padding: '48px' }}>
+      
+      <Content style={{ padding: '24px 48px' }}>
+        {/* Barre de progression */}
+        <Steps 
+          current={currentStepIndex} 
+          items={stepItems} 
+          style={{ marginBottom: 32, padding: '0 50px' }}
+        />
+
+        {/* Contenu de l'écran */}
         {renderScreen()}
       </Content>
     </Layout>
   );
 }
 
-export default App;
+export default function App() {
+  return (
+    <ProjectProvider>
+      <AppContent />
+    </ProjectProvider>
+  );
+}

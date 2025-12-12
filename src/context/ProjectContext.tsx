@@ -1,10 +1,7 @@
 // src/context/ProjectContext.tsx
 import React, { createContext, useContext, useState, ReactNode, useEffect } from 'react';
 
-// === TYPES ===
-
-export type ProjectType = 'excel' | 'word'; // <--- NOUVEAU TYPE
-
+// === TYPES EXCEL ===
 export interface SheetConfig {
   name: string;
   enabled: boolean;
@@ -14,14 +11,35 @@ export interface SheetConfig {
   selectedCells: string[];
 }
 
+// === TYPES WORD (NOUVEAU) ===
+export interface StyleRequirement {
+  id: string; // ex: "Heading1"
+  name: string; // ex: "Titre 1"
+  fontName?: string;
+  fontSize?: number;
+  color?: string;
+  isBold?: boolean;
+  isItalic?: boolean;
+  alignment?: string;
+}
+
+export interface WordConfig {
+  checkStyles: boolean;
+  stylesToCheck: StyleRequirement[]; // Liste des styles à vérifier
+  checkPageSetup: boolean;
+  expectedOrientation: 'portrait' | 'landscape' | 'mixed'; // Ce qu'on attend
+}
+
+export type ProjectType = 'excel' | 'word';
+
 export interface StudentData {
   id: string;
   filename: string;
   name: string;
   firstName: string;
   group: string;
-  workbook: any;      // Pour Excel
-  wordContent?: any;  // Pour Word (contenu dézippé) <--- NOUVEAU CHAMP
+  workbook: any;      
+  wordContent?: any;  
   status: 'success' | 'error';
   errorMessage?: string;
 }
@@ -29,21 +47,22 @@ export interface StudentData {
 interface ProjectState {
   projectName: string;
   setProjectName: (name: string) => void;
-  
-  // NOUVEAU : Type de projet
   projectType: ProjectType;
   setProjectType: (type: ProjectType) => void;
 
   profFile: File | null;
   profWorkbook: any | null;
-  // NOUVEAU : Données prof Word
   profWordData: any | null; 
-  
   setProfData: (file: File | null, data: any) => void;
 
+  // Config Excel
   sheetConfigs: SheetConfig[];
   setSheetConfigs: (configs: SheetConfig[]) => void;
   updateSheetConfig: (name: string, key: keyof SheetConfig, value: any) => void;
+
+  // Config Word (NOUVEAU)
+  wordConfig: WordConfig;
+  setWordConfig: (config: WordConfig) => void;
 
   globalOptions: {
     identitySheet?: string;
@@ -69,17 +88,14 @@ interface ProjectState {
 }
 
 const ProjectContext = createContext<ProjectState | undefined>(undefined);
-const STORAGE_KEY = 'korexcel_project_config_v2'; // Changement de version v2
+const STORAGE_KEY = 'korexcel_project_config_v3'; // Version 3
 
 export function ProjectProvider({ children }: { children: ReactNode }) {
-  
-  // Chargement initial
   const [projectName, setProjectName] = useState(() => {
     const saved = localStorage.getItem(STORAGE_KEY);
     return saved ? JSON.parse(saved).projectName : '';
   });
 
-  // NOUVEAU STATE
   const [projectType, setProjectType] = useState<ProjectType>(() => {
     const saved = localStorage.getItem(STORAGE_KEY);
     return saved ? (JSON.parse(saved).projectType || 'excel') : 'excel';
@@ -87,11 +103,27 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
 
   const [profFile, setProfFile] = useState<File | null>(null);
   const [profWorkbook, setProfWorkbook] = useState<any | null>(null);
-  const [profWordData, setProfWordData] = useState<any | null>(null); // Pour Word
+  const [profWordData, setProfWordData] = useState<any | null>(null);
 
   const [sheetConfigs, setSheetConfigs] = useState<SheetConfig[]>(() => {
     const saved = localStorage.getItem(STORAGE_KEY);
     return saved ? JSON.parse(saved).sheetConfigs : [];
+  });
+
+  // État par défaut pour Word
+  const [wordConfig, setWordConfig] = useState<WordConfig>(() => {
+    const saved = localStorage.getItem(STORAGE_KEY);
+    return saved ? (JSON.parse(saved).wordConfig || {
+      checkStyles: true,
+      stylesToCheck: [],
+      checkPageSetup: true,
+      expectedOrientation: 'portrait'
+    }) : {
+      checkStyles: true,
+      stylesToCheck: [],
+      checkPageSetup: true,
+      expectedOrientation: 'portrait'
+    };
   });
   
   const defaultGlobalOptions = {
@@ -118,16 +150,16 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
 
   const [students, setStudents] = useState<StudentData[]>([]);
 
-  // Sauvegarde auto
   useEffect(() => {
     const dataToSave = {
       projectName,
-      projectType, // On sauvegarde aussi le type
+      projectType,
       sheetConfigs,
+      wordConfig, // On sauvegarde aussi la config Word
       globalOptions
     };
     localStorage.setItem(STORAGE_KEY, JSON.stringify(dataToSave));
-  }, [projectName, projectType, sheetConfigs, globalOptions]);
+  }, [projectName, projectType, sheetConfigs, wordConfig, globalOptions]);
 
 
   const setProfData = (file: File | null, data: any) => {
@@ -136,7 +168,7 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
       setProfWorkbook(data);
       setProfWordData(null);
     } else {
-      setProfWordData(data); // On stockera le zip ou le XML ici
+      setProfWordData(data);
       setProfWorkbook(null);
     }
   };
@@ -167,6 +199,7 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
       projectType, setProjectType,
       profFile, profWorkbook, profWordData, setProfData,
       sheetConfigs, setSheetConfigs, updateSheetConfig,
+      wordConfig, setWordConfig, // Export des fonctions Word
       globalOptions, setGlobalOption,
       students, addStudent, clearStudents
     }}>

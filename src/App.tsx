@@ -1,13 +1,14 @@
 // src/App.tsx
 import { useState } from 'react';
 import { Layout, Typography, Steps } from 'antd';
-import { ProjectProvider } from './context/ProjectContext';
-import { ResultsScreen } from './components/screens/ResultsScreen';
+import { ProjectProvider, useProject } from './context/ProjectContext'; // Ajout de useProject
 
 // Ecrans
 import { ProjectScreen } from './components/screens/ProjectScreen';
 import { ConfigScreen } from './components/screens/ConfigScreen';
+import { WordConfigScreen } from './components/screens/WordConfigScreen'; // Ajout de l'import
 import { ImportStudentsScreen } from './components/screens/ImportStudentsScreen';
+import { ResultsScreen } from './components/screens/ResultsScreen';
 
 const { Header, Content } = Layout;
 const { Title } = Typography;
@@ -16,8 +17,10 @@ type Screen = 'project' | 'config' | 'import' | 'results';
 
 function AppContent() {
   const [currentScreen, setCurrentScreen] = useState<Screen>('project');
+  
+  // On récupère le type de projet pour savoir quel écran afficher
+  const { projectType } = useProject(); 
 
-  // Petit mapping pour la barre de progression (Steps)
   const stepItems = [
     { title: 'Projet', key: 'project' },
     { title: 'Config Prof', key: 'config' },
@@ -35,12 +38,18 @@ function AppContent() {
     switch (currentScreen) {
       case 'project':
         return <ProjectScreen onNavigate={navigateTo} />;
+      
       case 'config':
+        // C'EST ICI QUE LA MAGIE OPÈRE : LE BRANCHEMENT CONDITIONNEL
+        if (projectType === 'word') {
+          return <WordConfigScreen onNavigate={navigateTo} />;
+        }
         return <ConfigScreen onNavigate={navigateTo} />;
+      
       case 'import':
         return <ImportStudentsScreen onNavigate={navigateTo} />;
       case 'results':
-        return <ResultsScreen />; // C'est ici qu'on branche l'écran !
+        return <ResultsScreen />;
       default:
         return <ProjectScreen onNavigate={navigateTo} />;
     }
@@ -55,14 +64,11 @@ function AppContent() {
       </Header>
       
       <Content style={{ padding: '24px 48px' }}>
-        {/* Barre de progression */}
         <Steps 
           current={currentStepIndex} 
           items={stepItems} 
           style={{ marginBottom: 32, padding: '0 50px' }}
         />
-
-        {/* Contenu de l'écran */}
         {renderScreen()}
       </Content>
     </Layout>

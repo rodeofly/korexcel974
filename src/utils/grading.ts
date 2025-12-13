@@ -1,8 +1,8 @@
 // src/utils/grading.ts
 import { type SheetConfig, type StudentData, type ProjectType, type WordConfig, type StyleRequirement } from "../context/ProjectContext";
 import { gradeWordDocument } from "./wordGrading"; 
-
-declare const XLSX: any; 
+// CORRECTION : Import nécessaire pour que le calcul fonctionne
+import * as XLSX from 'xlsx';
 
 export interface SheetResult {
   sheetName: string;
@@ -16,9 +16,7 @@ export interface StudentResult extends StudentData {
   globalScore: number;
   sheetResults: SheetResult[]; 
   wordDetails?: string[];
-  // NOUVEAU : Les styles trouvés chez l'élève
   detectedStyles?: StyleRequirement[]; 
-  // NOUVEAU : Bonus manuel
   manualAdjustment?: number; 
 }
 
@@ -47,7 +45,7 @@ export const gradeStudent = async (
       globalScore: wordResult.globalScore,
       sheetResults: [], 
       wordDetails: wordResult.details,
-      detectedStyles: wordResult.detectedStyles, // On passe les données
+      detectedStyles: wordResult.detectedStyles,
       manualAdjustment: 0
     };
   }

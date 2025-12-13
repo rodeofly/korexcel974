@@ -1,16 +1,15 @@
 // src/components/screens/ProjectScreen.tsx
-import { Button, Input, Space, Typography, Card, Radio } from 'antd';
+import { Button, Input, Space, Typography, Card, Radio, Divider } from 'antd';
 import { useProject } from '../../context/ProjectContext';
 import { TableOutlined, FileWordOutlined } from '@ant-design/icons';
 
 const { Title, Text } = Typography;
 
 interface ProjectScreenProps {
-  onNavigate: (screen: 'config') => void; // Typage plus strict
+  onNavigate: (screen: 'config') => void;
 }
 
 export function ProjectScreen({ onNavigate }: ProjectScreenProps) {
-  // On utilise le contexte pour lire/écrire
   const { projectName, setProjectName, projectType, setProjectType } = useProject();
 
   const handleCreateConfig = () => {
@@ -20,10 +19,11 @@ export function ProjectScreen({ onNavigate }: ProjectScreenProps) {
 
   return (
     <Card>
-      <Space orientation="vertical" size="large" style={{ width: '100%' }}>
+      {/* Remplacement du Space principal par une div Flex si le warning persiste */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 24, width: '100%' }}>
         <Title level={4}>1. Nouveau Projet</Title>
         
-        <Space orientation="vertical" style={{ width: '100%' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
           <Text strong>Nom du projet</Text>
           <Input 
             placeholder="Ex: Partiel Info - Semestre 1" 
@@ -31,9 +31,9 @@ export function ProjectScreen({ onNavigate }: ProjectScreenProps) {
             value={projectName}
             onChange={(e) => setProjectName(e.target.value)}
           />
-        </Space>
+        </div>
 
-        <Space orientation="vertical" style={{ width: '100%' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
           <Text strong>Type de correction</Text>
           <Radio.Group 
             value={projectType} 
@@ -47,7 +47,7 @@ export function ProjectScreen({ onNavigate }: ProjectScreenProps) {
               <Space><FileWordOutlined style={{ color: '#1890ff' }} /> Traitement de texte (Word)</Space>
             </Radio.Button>
           </Radio.Group>
-        </Space>
+        </div>
 
         <Divider />
 
@@ -60,10 +60,7 @@ export function ProjectScreen({ onNavigate }: ProjectScreenProps) {
         >
           Commencer la configuration
         </Button>
-      </Space>
+      </div>
     </Card>
   );
 }
-
-// J'ajoute un import manquant pour Divider
-import { Divider } from 'antd';

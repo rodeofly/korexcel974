@@ -20,8 +20,8 @@ export function ImportStudentsScreen({ onNavigate }: ImportStudentsScreenProps) 
 
   useEffect(() => {
     if (projectType === 'excel') {
-      // On s'assure que le chemin est correct pour Vite
-      workerRef.current = new Worker(new URL('../../workers/excel.worker.ts', import.meta.url), { type: 'module' });
+      // CORRECTION : Chemin 'worker' au singulier pour correspondre à votre dossier
+      workerRef.current = new Worker(new URL('../../worker/excel.worker.ts', import.meta.url), { type: 'module' });
     }
     return () => {
       workerRef.current?.terminate();
@@ -39,26 +39,32 @@ export function ImportStudentsScreen({ onNavigate }: ImportStudentsScreenProps) 
       }
 
       const rawName = file.name.replace(/\.docx$/i, '');
+      // AJOUT : Extraction de l'ID (8 chiffres) dans le nom du fichier Word aussi
       const idMatch = rawName.match(/(\d{8})/);
       
       let name = rawName;
+      let firstName = "";
       let studentId = "Inconnu";
 
       if (idMatch) {
         studentId = idMatch[0];
+        // On utilise l'ID comme "Nom" principal pour l'affichage
         name = idMatch[0];
+        // Le reste du nom de fichier devient le prénom/info complémentaire
+        firstName = rawName.replace(idMatch[0], '').trim().replace(/^[_-\s]+|[_-\s]+$/g, '');
       }
 
       return {
         studentId,
         name, 
-        firstName: "", 
+        firstName, 
         group: "Word", 
         workbook: null,
         wordContent: content, 
         status: 'success' as const,
+        // On remplit les champs de conflit pour Word aussi
         idFromFileName: studentId !== "Inconnu" ? studentId : null,
-        idFromSheet: null,
+        idFromSheet: null, // Pas de lecture interne "feuille" pour Word ici
         hasIdentityConflict: false
       };
 
@@ -174,7 +180,7 @@ export function ImportStudentsScreen({ onNavigate }: ImportStudentsScreenProps) 
           showUploadList={false}
           style={{ padding: 20, background: isWordMode ? '#f0f5ff' : '#f6ffed' }}
         >
-          {/* CORRECTION ICI : Remplacement des <p> par des <div> */}
+          {/* CORRECTION : Utilisation de div au lieu de p pour éviter l'erreur de nidification HTML */}
           <div className="ant-upload-drag-icon">
             {processing ? <Spin /> : <Icon style={{ color: isWordMode ? '#1890ff' : '#52c41a' }} />}
           </div>
@@ -217,10 +223,11 @@ export function ImportStudentsScreen({ onNavigate }: ImportStudentsScreenProps) 
                   </Space>
                 }
                 description={
-                  // CORRECTION : Space deprecated warning -> orientation
-                  <Space direction="vertical" size={0} style={{ width: '100%' }}>
+                  // CORRECTION : Utilisation de orientation="vertical" pour éviter le warning AntD v6
+                  // (Note: AntD v5 utilise direction, v6 semble vouloir orientation ou flex natif)
+                  <Space orientation="vertical" size={0} style={{ width: '100%', alignItems: 'flex-start' }}>
                     <Text type="secondary" style={{ fontSize: 12 }}>{student.firstName || student.filename}</Text>
-                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', width: '100%' }}>
                       <Text type="secondary" style={{ fontSize: 11 }}>ID: {student.studentId}</Text>
                       {student.group && <Tag color="blue" style={{ fontSize: 10, lineHeight: '18px' }}>Gr. {student.group}</Tag>}
                     </div>

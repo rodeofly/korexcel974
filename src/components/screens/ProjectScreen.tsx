@@ -20,10 +20,10 @@ export function ProjectScreen({ onNavigate }: ProjectScreenProps) {
 
   return (
     <Card>
-      <Space direction="vertical" size="large" style={{ width: '100%' }}>
+      <Space orientation="vertical" size="large" style={{ width: '100%' }}>
         <Title level={4}>1. Nouveau Projet</Title>
         
-        <Space direction="vertical" style={{ width: '100%' }}>
+        <Space orientation="vertical" style={{ width: '100%' }}>
           <Text strong>Nom du projet</Text>
           <Input 
             placeholder="Ex: Partiel Info - Semestre 1" 
@@ -33,7 +33,7 @@ export function ProjectScreen({ onNavigate }: ProjectScreenProps) {
           />
         </Space>
 
-        <Space direction="vertical" style={{ width: '100%' }}>
+        <Space orientation="vertical" style={{ width: '100%' }}>
           <Text strong>Type de correction</Text>
           <Radio.Group 
             value={projectType} 

@@ -1,5 +1,6 @@
 // src/context/ProjectContext.tsx
 import React, { createContext, useContext, useState, ReactNode, useEffect } from 'react';
+import { get, set, del } from 'idb-keyval'; // Importation pour la sauvegarde de fichier
 
 // === TYPES EXCEL ===
 export interface SheetConfig {
@@ -11,7 +12,7 @@ export interface SheetConfig {
   selectedCells: string[];
 }
 
-// === TYPES WORD (EVOLUÉ) ===
+// === TYPES WORD ===
 export interface StyleRequirement {
   id: string; 
   name: string; 
@@ -24,10 +25,10 @@ export interface StyleRequirement {
 }
 
 export interface SectionRequirement {
-  index: number; // Section 1, 2...
+  index: number;
   orientation: 'portrait' | 'landscape';
-  headerText?: string; // Texte contenu dans l'entête
-  footerText?: string; // Texte contenu dans le pied de page
+  headerText?: string;
+  footerText?: string;
   checkOrientation: boolean;
   checkHeader: boolean;
   checkFooter: boolean;
@@ -36,7 +37,6 @@ export interface SectionRequirement {
 export interface WordConfig {
   checkStyles: boolean;
   stylesToCheck: StyleRequirement[];
-  // NOUVEAU : Liste des sections à vérifier
   sectionsToCheck: SectionRequirement[]; 
 }
 
@@ -44,6 +44,7 @@ export type ProjectType = 'excel' | 'word';
 
 export interface StudentData {
   id: string;
+  studentId: string;
   filename: string;
   name: string;
   firstName: string;
@@ -52,6 +53,9 @@ export interface StudentData {
   wordContent?: any;  
   status: 'success' | 'error';
   errorMessage?: string;
+  idFromFileName?: string | null;
+  idFromSheet?: string | null;
+  hasIdentityConflict?: boolean;
 }
 
 interface ProjectState {
@@ -64,6 +68,8 @@ interface ProjectState {
   profWorkbook: any | null;
   profWordData: any | null; 
   setProfData: (file: File | null, data: any) => void;
+  
+  isRestoring: boolean; // Nouvel état pour savoir si on charge
 
   sheetConfigs: SheetConfig[];
   setSheetConfigs: (configs: SheetConfig[]) => void;
@@ -93,12 +99,14 @@ interface ProjectState {
   students: StudentData[];
   addStudent: (student: StudentData) => void;
   clearStudents: () => void;
+  resetConfig: () => void; // Nouvelle fonction pour tout remettre à zéro
 }
 
 const ProjectContext = createContext<ProjectState | undefined>(undefined);
-const STORAGE_KEY = 'korexcel_project_config_v4'; // Version 4
+const STORAGE_KEY = 'korexcel_project_config_v5';
 
 export function ProjectProvider({ children }: { children: ReactNode }) {
+  // --- ETATS PERSISTANTS (LocalStorage) ---
   const [projectName, setProjectName] = useState(() => {
     const saved = localStorage.getItem(STORAGE_KEY);
     return saved ? JSON.parse(saved).projectName : '';
@@ -109,10 +117,6 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
     return saved ? (JSON.parse(saved).projectType || 'excel') : 'excel';
   });
 
-  const [profFile, setProfFile] = useState<File | null>(null);
-  const [profWorkbook, setProfWorkbook] = useState<any | null>(null);
-  const [profWordData, setProfWordData] = useState<any | null>(null);
-
   const [sheetConfigs, setSheetConfigs] = useState<SheetConfig[]>(() => {
     const saved = localStorage.getItem(STORAGE_KEY);
     return saved ? JSON.parse(saved).sheetConfigs : [];
@@ -120,7 +124,6 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
 
   const [wordConfig, setWordConfig] = useState<WordConfig>(() => {
     const saved = localStorage.getItem(STORAGE_KEY);
-    // Migration v3 -> v4 : on ajoute sectionsToCheck par défaut
     const loaded = saved ? JSON.parse(saved).wordConfig : null;
     return loaded ? {
       checkStyles: loaded.checkStyles ?? true,
@@ -155,8 +158,14 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
     return saved ? { ...defaultGlobalOptions, ...JSON.parse(saved).globalOptions } : defaultGlobalOptions;
   });
 
+  // --- ETATS VOLATILES (Mémoire + IndexedDB) ---
+  const [profFile, setProfFile] = useState<File | null>(null);
+  const [profWorkbook, setProfWorkbook] = useState<any | null>(null);
+  const [profWordData, setProfWordData] = useState<any | null>(null);
+  const [isRestoring, setIsRestoring] = useState(true);
   const [students, setStudents] = useState<StudentData[]>([]);
 
+  // 1. Sauvegarde Config (LocalStorage) à chaque changement
   useEffect(() => {
     const dataToSave = {
       projectName,
@@ -168,15 +177,60 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(dataToSave));
   }, [projectName, projectType, sheetConfigs, wordConfig, globalOptions]);
 
+  // 2. Restauration du Fichier (IndexedDB) au démarrage
+  useEffect(() => {
+    const restoreFile = async () => {
+      try {
+        const file = await get('profFile'); // On récupère le fichier brut
+        if (file) {
+          setProfFile(file);
+          console.log("Fichier restauré:", file.name);
+          
+          // On doit le ré-analyser car on ne peut pas stocker l'objet Workbook complexe
+          const arrayBuffer = await file.arrayBuffer();
+          
+          if (file.name.endsWith('.docx')) {
+             const JSZip = (await import('jszip')).default;
+             const zip = await new JSZip().loadAsync(arrayBuffer);
+             setProfWordData(zip);
+             // On s'assure que le type est bon (priorité au fichier restauré)
+             setProjectType('word');
+          } else {
+             const XLSX = await import('xlsx');
+             const wb = XLSX.read(arrayBuffer, { type: 'array' });
+             setProfWorkbook(wb);
+             setProjectType('excel');
+          }
+        }
+      } catch (err) {
+        console.error("Erreur restauration fichier:", err);
+      } finally {
+        setIsRestoring(false);
+      }
+    };
+    restoreFile();
+  }, []);
 
-  const setProfData = (file: File | null, data: any) => {
+  // 3. Mise à jour du fichier Prof + Sauvegarde IDB
+  const setProfData = async (file: File | null, data: any) => {
     setProfFile(file);
-    if (projectType === 'excel') {
-      setProfWorkbook(data);
-      setProfWordData(null);
+    
+    if (file) {
+      // Sauvegarde dans IndexedDB
+      await set('profFile', file);
+      
+      if (projectType === 'excel') {
+        setProfWorkbook(data);
+        setProfWordData(null);
+      } else {
+        setProfWordData(data);
+        setProfWorkbook(null);
+      }
     } else {
-      setProfWordData(data);
+      // Suppression
+      await del('profFile');
       setProfWorkbook(null);
+      setProfWordData(null);
     }
   };
 
@@ -200,15 +254,23 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
     setStudents([]);
   };
 
+  // Nouvelle fonction pour tout nettoyer si besoin
+  const resetConfig = async () => {
+    await del('profFile');
+    localStorage.removeItem(STORAGE_KEY);
+    window.location.reload();
+  };
+
   return (
     <ProjectContext.Provider value={{
       projectName, setProjectName,
       projectType, setProjectType,
       profFile, profWorkbook, profWordData, setProfData,
+      isRestoring,
       sheetConfigs, setSheetConfigs, updateSheetConfig,
       wordConfig, setWordConfig, 
       globalOptions, setGlobalOption,
-      students, addStudent, clearStudents
+      students, addStudent, clearStudents, resetConfig
     }}>
       {children}
     </ProjectContext.Provider>

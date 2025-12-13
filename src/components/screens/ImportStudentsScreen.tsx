@@ -1,12 +1,9 @@
 // src/components/screens/ImportStudentsScreen.tsx
-import { useState } from 'react';
-import { Card, Upload, Typography, List, Tag, Button, Space, message, Avatar } from 'antd';
-import { InboxOutlined, UserOutlined, DeleteOutlined, PlayCircleOutlined, FileWordOutlined, TableOutlined } from '@ant-design/icons';
+import { useState, useRef, useEffect } from 'react';
+import { Card, Upload, Typography, List, Tag, Button, Space, message, Avatar, Spin, Tooltip } from 'antd';
+import { InboxOutlined, UserOutlined, DeleteOutlined, PlayCircleOutlined, FileWordOutlined, TableOutlined, WarningOutlined } from '@ant-design/icons';
 import { useProject, type StudentData } from '../../context/ProjectContext';
 import JSZip from 'jszip'; 
-
-// Variable globale XLSX (pour Excel uniquement)
-declare const XLSX: any;
 
 const { Dragger } = Upload;
 const { Title, Text } = Typography;
@@ -19,161 +16,135 @@ export function ImportStudentsScreen({ onNavigate }: ImportStudentsScreenProps) 
   const { globalOptions, students, addStudent, clearStudents, projectType } = useProject();
   const [processing, setProcessing] = useState(false);
 
-  // --- LOGIQUE EXCEL ---
-  const getCellValue = (sheet: any, cellAddress: string): string => {
-    if (!sheet || !sheet[cellAddress]) return '';
-    return String(sheet[cellAddress].v || '').trim();
-  };
+  const workerRef = useRef<Worker | null>(null);
 
-  const processExcelFile = (file: File, data: ArrayBuffer) => {
-    const workbook = XLSX.read(data, { type: 'array' });
-    
-    const idSheetName = globalOptions.identitySheet || workbook.SheetNames[0];
-    const sheet = workbook.Sheets[idSheetName];
-
-    let name = "Inconnu";
-    let firstName = "";
-    let group = "";
-
-    if (sheet) {
-      name = getCellValue(sheet, globalOptions.studentNameCell) || "Nom Inconnu";
-      firstName = getCellValue(sheet, globalOptions.studentFirstNameCell) || "";
-      group = getCellValue(sheet, globalOptions.groupIdCell) || "";
-
-      if (globalOptions.trimIdentity) {
-        name = name.trim().toUpperCase();
-        firstName = firstName.trim();
-      }
-      if (globalOptions.extractGroupNumber && group) {
-         const match = group.match(/\d+/);
-         if (match) group = match[0];
-      }
+  useEffect(() => {
+    if (projectType === 'excel') {
+      // On s'assure que le chemin est correct pour Vite
+      workerRef.current = new Worker(new URL('../../workers/excel.worker.ts', import.meta.url), { type: 'module' });
     }
-
-    return {
-      name, firstName, group,
-      workbook,
-      wordContent: undefined,
-      status: sheet ? 'success' : 'error' as const,
-      errorMessage: sheet ? undefined : `Feuille "${idSheetName}" introuvable`
+    return () => {
+      workerRef.current?.terminate();
     };
-  };
+  }, [projectType]);
 
-  // --- LOGIQUE WORD (Corrigée pour 8 chiffres) ---
-  const processWordFile = async (file: File, data: ArrayBuffer) => {
+  const processWordFile = async (file: File) => {
     try {
+      const data = await file.arrayBuffer();
       const zip = new JSZip();
       const content = await zip.loadAsync(data);
       
       if (!content.file("word/document.xml")) {
-        return {
-          name: file.name, firstName: "", group: "?",
-          workbook: null, wordContent: null,
-          status: 'error' as const, errorMessage: "Pas un fichier .docx valide"
-        };
+        throw new Error("Pas un fichier .docx valide");
       }
 
-      // 1. On nettoie le nom de fichier (on enlève .docx)
       const rawName = file.name.replace(/\.docx$/i, '');
-      
-      let name = "Inconnu";
-      let firstName = rawName; // Par défaut, tout le nom va dans le prénom
-
-      // 2. REGLE : Chercher 8 chiffres consécutifs
       const idMatch = rawName.match(/(\d{8})/);
+      
+      let name = rawName;
+      let studentId = "Inconnu";
 
       if (idMatch) {
-        name = idMatch[0]; // "42000894" devient le NOM (Identifiant principal)
-        // On enlève le numéro du reste pour faire le prénom
-        firstName = rawName.replace(idMatch[0], '').trim().replace(/^[_-\s]+|[_-\s]+$/g, '');
-        if (!firstName) firstName = "(Etudiant)";
-      } else {
-        // Si pas de numéro trouvé, on garde le comportement par défaut
-        name = rawName;
-        firstName = "";
+        studentId = idMatch[0];
+        name = idMatch[0];
       }
 
       return {
+        studentId,
         name, 
-        firstName, 
+        firstName: "", 
         group: "Word", 
         workbook: null,
         wordContent: content, 
         status: 'success' as const,
-        errorMessage: undefined
+        idFromFileName: studentId !== "Inconnu" ? studentId : null,
+        idFromSheet: null,
+        hasIdentityConflict: false
       };
 
-    } catch (e) {
-      console.error(e);
+    } catch (e: any) {
       return {
-        name: file.name, firstName: "", group: "",
-        workbook: null, wordContent: null,
-        status: 'error' as const, errorMessage: "Erreur lecture fichier"
+        studentId: "Erreur",
+        name: file.name, 
+        firstName: "", 
+        group: "",
+        workbook: null, 
+        wordContent: null,
+        status: 'error' as const, 
+        errorMessage: e.message
       };
     }
   };
 
-  // --- GESTIONNAIRE PRINCIPAL ---
+  const processExcelWithWorker = (file: File): Promise<any> => {
+    return new Promise((resolve, reject) => {
+      if (!workerRef.current) return reject("Worker Excel non initialisé");
+
+      const handleMessage = (e: MessageEvent) => {
+        const { status, data, message } = e.data;
+        workerRef.current?.removeEventListener('message', handleMessage);
+        
+        if (status === 'success') {
+          resolve(data);
+        } else {
+          reject(message);
+        }
+      };
+
+      workerRef.current.addEventListener('message', handleMessage);
+      workerRef.current.postMessage({ file, globalOptions });
+    });
+  };
+
   const handleFileUpload = async (file: File) => {
     setProcessing(true);
-    
-    // Vérification de l'extension
-    const isExcel = file.name.endsWith('.xlsx') || file.name.endsWith('.xls');
-    const isWord = file.name.endsWith('.docx');
-
-    if (projectType === 'excel' && !isExcel) {
-      message.error(`${file.name} : Fichier Excel requis`);
-      setProcessing(false);
-      return false;
-    }
-    if (projectType === 'word' && !isWord) {
-      message.error(`${file.name} : Fichier Word requis`);
-      setProcessing(false);
-      return false;
-    }
-
-    const reader = new FileReader();
-    reader.onload = async (e) => {
-      try {
-        const data = e.target?.result as ArrayBuffer;
-        let studentInfo;
-
-        if (projectType === 'word') {
-          studentInfo = await processWordFile(file, data);
+    try {
+        let result;
+        if (projectType === 'excel') {
+            result = await processExcelWithWorker(file);
         } else {
-          studentInfo = processExcelFile(file, data);
+            result = await processWordFile(file);
         }
 
         const newStudent: StudentData = {
-          id: file.name + Date.now(),
-          filename: file.name,
-          ...studentInfo
-        };
+           id: file.name + Date.now(),
+           filename: file.name,
+           
+           studentId: result.id || result.studentId,
+           name: result.name,
+           firstName: result.firstName,
+           group: result.group,
+           workbook: result.workbook,
+           wordContent: result.wordContent,
+           
+           status: result.status || 'success',
+           errorMessage: result.errorMessage,
+           
+           idFromFileName: result.idFromFileName,
+           idFromSheet: result.idFromSheet,
+           hasIdentityConflict: result.hasConflict
+         };
+         
+         addStudent(newStudent);
+         message.success(`${file.name} traité`);
 
-        addStudent(newStudent);
-        message.success(`${file.name} importé`);
-
-      } catch (error) {
-        console.error(error);
-        message.error(`Erreur fatale sur ${file.name}`);
-      } finally {
+    } catch (err: any) {
+        console.error(err);
+        message.error(`Erreur sur ${file.name}: ${err}`);
+    } finally {
         setProcessing(false);
-      }
-    };
-    reader.readAsArrayBuffer(file);
-    
+    }
     return false; 
   };
 
-  // Configuration de l'affichage
   const isWordMode = projectType === 'word';
   const acceptExt = isWordMode ? ".docx" : ".xlsx, .xls";
-  const dropText = isWordMode ? "Glissez les fichiers WORD (.docx) des élèves" : "Glissez les fichiers EXCEL (.xlsx) des élèves";
+  const dropText = isWordMode ? "Glissez les fichiers WORD (.docx)" : "Glissez les fichiers EXCEL (.xlsx)";
   const Icon = isWordMode ? FileWordOutlined : TableOutlined;
 
   return (
     <Card 
-      title={<Title level={4}>Étape 3 : Importer les copies élèves ({isWordMode ? "Word" : "Excel"})</Title>}
+      title={<Title level={4}>Étape 3 : Importer les copies ({isWordMode ? "Word" : "Excel"})</Title>}
       extra={
         <Button danger onClick={clearStudents} icon={<DeleteOutlined />}>
           Tout effacer
@@ -185,8 +156,9 @@ export function ImportStudentsScreen({ onNavigate }: ImportStudentsScreenProps) 
             type="primary" 
             size="large" 
             icon={<PlayCircleOutlined />}
-            disabled={students.length === 0}
+            disabled={students.length === 0 || processing}
             onClick={() => onNavigate('results')}
+            loading={processing}
           >
             Lancer la correction ({students.length} copies)
           </Button>
@@ -202,17 +174,14 @@ export function ImportStudentsScreen({ onNavigate }: ImportStudentsScreenProps) 
           showUploadList={false}
           style={{ padding: 20, background: isWordMode ? '#f0f5ff' : '#f6ffed' }}
         >
-          <p className="ant-upload-drag-icon">
-            <Icon style={{ color: isWordMode ? '#1890ff' : '#52c41a' }} />
-          </p>
-          <p className="ant-upload-text">
-            {dropText}
-          </p>
-          <p className="ant-upload-hint">
-            {isWordMode 
-              ? "Recherche automatique du N° Étudiant (8 chiffres) dans le nom du fichier." 
-              : "L'identité sera lue automatiquement dans les cellules configurées."}
-          </p>
+          {/* CORRECTION ICI : Remplacement des <p> par des <div> */}
+          <div className="ant-upload-drag-icon">
+            {processing ? <Spin /> : <Icon style={{ color: isWordMode ? '#1890ff' : '#52c41a' }} />}
+          </div>
+          <div className="ant-upload-text">{dropText}</div>
+          <div className="ant-upload-hint">
+            Détection automatique des conflits d'identité (Nom de fichier vs Contenu).
+          </div>
         </Dragger>
       </div>
 
@@ -223,17 +192,38 @@ export function ImportStudentsScreen({ onNavigate }: ImportStudentsScreenProps) 
         dataSource={students}
         renderItem={student => (
           <List.Item>
-            <Card size="small" style={{ borderColor: student.status === 'error' ? '#ffccc7' : '#d9d9d9' }}>
+            <Card 
+              size="small" 
+              style={{ 
+                borderColor: student.hasIdentityConflict ? '#faad14' : (student.status === 'error' ? '#ffccc7' : '#d9d9d9'),
+                background: student.hasIdentityConflict ? '#fffbe6' : undefined 
+              }}
+            >
               <List.Item.Meta
-                avatar={<Avatar style={{ backgroundColor: isWordMode ? '#1890ff' : '#52c41a' }} icon={<UserOutlined />} />}
-                title={<Text strong>{student.name}</Text>}
+                avatar={
+                  <Avatar 
+                    style={{ backgroundColor: student.hasIdentityConflict ? '#faad14' : (isWordMode ? '#1890ff' : '#52c41a') }} 
+                    icon={student.hasIdentityConflict ? <WarningOutlined /> : <UserOutlined />} 
+                  />
+                }
+                title={
+                  <Space>
+                    <Text strong>{student.name}</Text>
+                    {student.hasIdentityConflict && (
+                      <Tooltip title={`Fichier: ${student.idFromFileName} ≠ Feuille: ${student.idFromSheet}`}>
+                        <Tag color="warning">Conflit ID</Tag>
+                      </Tooltip>
+                    )}
+                  </Space>
+                }
                 description={
-                  <Space direction="vertical" size={0}>
+                  // CORRECTION : Space deprecated warning -> orientation
+                  <Space direction="vertical" size={0} style={{ width: '100%' }}>
                     <Text type="secondary" style={{ fontSize: 12 }}>{student.firstName || student.filename}</Text>
-                    <Space>
-                      {student.group && <Tag color="blue">{student.group}</Tag>}
-                      {student.status === 'error' && <Tag color="error">{student.errorMessage}</Tag>}
-                    </Space>
+                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <Text type="secondary" style={{ fontSize: 11 }}>ID: {student.studentId}</Text>
+                      {student.group && <Tag color="blue" style={{ fontSize: 10, lineHeight: '18px' }}>Gr. {student.group}</Tag>}
+                    </div>
                   </Space>
                 }
               />

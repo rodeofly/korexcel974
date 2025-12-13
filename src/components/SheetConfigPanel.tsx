@@ -2,9 +2,8 @@
 import { Modal, Typography, Button, Alert } from 'antd';
 import { useProject } from '../context/ProjectContext';
 import { useState, useEffect } from 'react';
-
-// Variable globale XLSX
-declare const XLSX: any;
+// CORRECTION : Import direct au lieu de variable globale
+import * as XLSX from 'xlsx';
 
 const { Title, Text } = Typography;
 
@@ -30,26 +29,21 @@ export function SheetConfigPanel({ visible, onClose, sheetName }: SheetConfigPan
     if (visible && sheetName && profWorkbook) {
       const sheet = profWorkbook.Sheets[sheetName];
       if (sheet) {
-        // --- C'EST ICI QU'ON APPLIQUE LA LIMITE ---
-        
-        // 1. On récupère la plage totale de la feuille
+        // Limitation de la zone de scan pour éviter de faire ramer le navigateur
         const range = XLSX.utils.decode_range(sheet['!ref'] || "A1");
         
-        // 2. On limite la plage selon les options globales
-        // On prend le MINIMUM entre la vraie taille et la limite définie
         const restrictedRange = {
-          s: range.s, // Début (A1)
+          s: range.s, 
           e: {
-            r: Math.min(range.e.r, globalOptions.scanMaxRows - 1), // Limite Lignes
-            c: Math.min(range.e.c, globalOptions.scanMaxCols - 1)  // Limite Colonnes
+            r: Math.min(range.e.r, globalOptions.scanMaxRows - 1), 
+            c: Math.min(range.e.c, globalOptions.scanMaxCols - 1)
           }
         };
 
-        // 3. On lit seulement cette plage
         const jsonData = XLSX.utils.sheet_to_json(sheet, { 
           header: 1, 
           defval: "",
-          range: restrictedRange // On passe la plage restreinte
+          range: restrictedRange 
         });
         
         setGridData(jsonData);
@@ -123,7 +117,7 @@ export function SheetConfigPanel({ visible, onClose, sheetName }: SheetConfigPan
 
   return (
     <Modal
-      title={<Title level={5}>Sélection pour "{sheetName}" (Max: {globalOptions.scanMaxRows} lignes / {globalOptions.scanMaxCols} colonnes)</Title>}
+      title={<Title level={5}>Sélection pour "{sheetName}"</Title>}
       open={visible}
       onCancel={onClose}
       footer={[
@@ -132,12 +126,12 @@ export function SheetConfigPanel({ visible, onClose, sheetName }: SheetConfigPan
       ]}
       width="90%"
       style={{ top: 20 }}
-      bodyStyle={{ userSelect: 'none' }} 
+      styles={{ body: { userSelect: 'none' } }}
     >
       <div onMouseUp={handleMouseUp} onMouseLeave={handleMouseUp}>
         <Alert 
           message="Sélectionnez les cellules à noter" 
-          description="Glissez la souris pour sélectionner (Vert). Glissez sur du vert pour désélectionner."
+          description="Cliquez-glissez pour sélectionner (Vert). Repassez dessus pour désélectionner."
           type="info"
           showIcon
           style={{ marginBottom: 16 }}
@@ -149,12 +143,7 @@ export function SheetConfigPanel({ visible, onClose, sheetName }: SheetConfigPan
               {gridData.map((row, rIndex) => (
                 <tr key={rIndex}>
                   <td style={{ 
-                    background: '#f5f5f5', 
-                    border: '1px solid #d9d9d9', 
-                    textAlign: 'center', 
-                    width: 30,
-                    color: '#999',
-                    userSelect: 'none'
+                    background: '#f5f5f5', border: '1px solid #d9d9d9', textAlign: 'center', width: 30, color: '#999', userSelect: 'none'
                   }}>
                     {rIndex + 1}
                   </td>
@@ -186,8 +175,7 @@ export function SheetConfigPanel({ visible, onClose, sheetName }: SheetConfigPan
                           textOverflow: 'ellipsis',
                           backgroundColor: bgColor,
                           color: isSelected || isDragActive ? '#000' : '#bfbfbf',
-                          userSelect: 'none',
-                          transition: 'background-color 0.1s'
+                          userSelect: 'none'
                         }}
                         title={String(cellVal)}
                       >
@@ -199,9 +187,6 @@ export function SheetConfigPanel({ visible, onClose, sheetName }: SheetConfigPan
               ))}
             </tbody>
           </table>
-        </div>
-        <div style={{ marginTop: 10, textAlign: 'right' }}>
-          <Text strong>{selectedCells.length > 0 ? `${selectedCells.length} cellules sélectionnées` : "Toutes les cellules seront corrigées"}</Text>
         </div>
       </div>
     </Modal>
